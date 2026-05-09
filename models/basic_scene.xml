@@ -1,0 +1,125 @@
+<mujoco model="quadcopter_basic_scene">
+  <compiler angle="degree" autolimits="true"/>
+
+  <option timestep="0.002" gravity="0 0 -9.81" integrator="RK4"/>
+
+  <visual>
+    <headlight diffuse="0.95 0.95 0.9" ambient="0.55 0.58 0.62" specular="0.15 0.15 0.15"/>
+    <rgba haze="0.53 0.75 1 1"/>
+    <global azimuth="135" elevation="-25"/>
+  </visual>
+
+  <asset>
+    <texture name="sky" type="skybox" builtin="flat" width="512" height="512"
+             rgb1="0.53 0.75 1" rgb2="0.53 0.75 1"/>
+    <texture name="meadow" type="2d" file="../assets/flowery_meadow_seamless.png"/>
+    <texture name="aruco_board" type="2d" file="../assets/aruco_board.png"/>
+    <material name="floor_grid" texture="meadow" texrepeat="1 1" texuniform="true"
+              reflectance="0" specular="0.04" shininess="0.1"/>
+    <material name="body_mat" rgba="0.12 0.16 0.2 1"/>
+    <material name="arm_mat" rgba="0.65 0.68 0.72 1"/>
+    <material name="front_mat" rgba="0.1 0.45 0.95 1"/>
+    <material name="rear_mat" rgba="0.95 0.24 0.18 1"/>
+    <material name="prop_mat" rgba="0.05 0.05 0.055 0.55"/>
+    <material name="car_body_mat" rgba="0.07 0.08 0.09 1" specular="0.25" shininess="0.45"/>
+    <material name="car_window_mat" rgba="0.12 0.22 0.32 1" specular="0.4" shininess="0.6"/>
+    <material name="wheel_mat" rgba="0.015 0.015 0.015 1"/>
+    <material name="aruco_mat" texture="aruco_board" texrepeat="1 1" texuniform="false"
+              specular="0.05" shininess="0.1"/>
+    <material name="trunk_mat" rgba="0.36 0.22 0.1 1"/>
+    <material name="leaf_mat" rgba="0.05 0.48 0.16 1"/>
+  </asset>
+
+  <worldbody>
+    <light name="sun" directional="true" castshadow="true" pos="-3 -4 8" dir="0.35 0.45 -1"
+           diffuse="0.95 0.95 0.9" ambient="0.45 0.48 0.52" specular="0.12 0.12 0.12"/>
+    <geom name="floor" type="plane" size="200 200 0.05" material="floor_grid"/>
+
+    <body name="tree_01" pos="3.0 2.2 0">
+      <geom name="tree_01_trunk" type="cylinder" pos="0 0 0.45" size="0.08 0.45" material="trunk_mat"/>
+      <geom name="tree_01_leaves" type="sphere" pos="0 0 1.05" size="0.42" material="leaf_mat"/>
+    </body>
+    <body name="tree_02" pos="-2.6 3.4 0">
+      <geom name="tree_02_trunk" type="cylinder" pos="0 0 0.35" size="0.07 0.35" material="trunk_mat"/>
+      <geom name="tree_02_leaves" type="sphere" pos="0 0 0.9" size="0.34" material="leaf_mat"/>
+    </body>
+    <body name="tree_03" pos="4.7 -1.8 0">
+      <geom name="tree_03_trunk" type="cylinder" pos="0 0 0.55" size="0.1 0.55" material="trunk_mat"/>
+      <geom name="tree_03_leaves" type="sphere" pos="0 0 1.25" size="0.5" material="leaf_mat"/>
+    </body>
+    <body name="tree_04" pos="-4.2 -2.5 0">
+      <geom name="tree_04_trunk" type="cylinder" pos="0 0 0.5" size="0.09 0.5" material="trunk_mat"/>
+      <geom name="tree_04_leaves" type="sphere" pos="0 0 1.15" size="0.45" material="leaf_mat"/>
+    </body>
+    <body name="tree_05" pos="1.2 -4.3 0">
+      <geom name="tree_05_trunk" type="cylinder" pos="0 0 0.42" size="0.075 0.42" material="trunk_mat"/>
+      <geom name="tree_05_leaves" type="sphere" pos="0 0 1.0" size="0.38" material="leaf_mat"/>
+    </body>
+    <body name="tree_06" pos="-5.6 1.1 0">
+      <geom name="tree_06_trunk" type="cylinder" pos="0 0 0.6" size="0.11 0.6" material="trunk_mat"/>
+      <geom name="tree_06_leaves" type="sphere" pos="0 0 1.35" size="0.55" material="leaf_mat"/>
+    </body>
+    <body name="tree_07" pos="6.0 3.6 0">
+      <geom name="tree_07_trunk" type="cylinder" pos="0 0 0.4" size="0.075 0.4" material="trunk_mat"/>
+      <geom name="tree_07_leaves" type="sphere" pos="0 0 0.95" size="0.36" material="leaf_mat"/>
+    </body>
+    <body name="tree_08" pos="-1.4 -6.1 0">
+      <geom name="tree_08_trunk" type="cylinder" pos="0 0 0.52" size="0.095 0.52" material="trunk_mat"/>
+      <geom name="tree_08_leaves" type="sphere" pos="0 0 1.18" size="0.46" material="leaf_mat"/>
+    </body>
+
+    <body name="landing_car" mocap="true" pos="10 0 0.22">
+      <geom name="car_chassis" type="box" pos="0 0 0.18" size="0.72 0.36 0.14"
+            material="car_body_mat"/>
+      <geom name="car_cabin" type="box" pos="-0.08 0 0.42" size="0.34 0.28 0.13"
+            material="car_window_mat"/>
+      <geom name="landing_platform" type="box" pos="0 0 0.61" size="0.52 0.52 0.025"
+            material="aruco_mat"/>
+      <geom name="wheel_fl" type="cylinder" pos="0.43 0.39 0.04" euler="90 0 0"
+            size="0.105 0.055" material="wheel_mat"/>
+      <geom name="wheel_fr" type="cylinder" pos="0.43 -0.39 0.04" euler="90 0 0"
+            size="0.105 0.055" material="wheel_mat"/>
+      <geom name="wheel_rl" type="cylinder" pos="-0.43 0.39 0.04" euler="90 0 0"
+            size="0.105 0.055" material="wheel_mat"/>
+      <geom name="wheel_rr" type="cylinder" pos="-0.43 -0.39 0.04" euler="90 0 0"
+            size="0.105 0.055" material="wheel_mat"/>
+    </body>
+
+    <body name="quadcopter" pos="0 0 10.0" gravcomp="1">
+      <freejoint name="root"/>
+
+      <camera name="drone_cam" pos="0.16 0 -0.035" xyaxes="0 -1 0 0.7071068 0 0.7071068"
+              fovy="65"/>
+
+      <geom name="body" type="box" size="0.16 0.11 0.045" mass="0.35" material="body_mat"/>
+      <geom name="front_marker" type="box" pos="0.18 0 0.01" size="0.035 0.055 0.02"
+            mass="0.02" material="front_mat"/>
+
+      <geom name="front_left_arm" type="capsule" fromto="0 0 0 0.42 0.42 0" size="0.018"
+            mass="0.055" material="arm_mat"/>
+      <geom name="front_right_arm" type="capsule" fromto="0 0 0 0.42 -0.42 0" size="0.018"
+            mass="0.055" material="arm_mat"/>
+      <geom name="rear_left_arm" type="capsule" fromto="0 0 0 -0.42 0.42 0" size="0.018"
+            mass="0.055" material="arm_mat"/>
+      <geom name="rear_right_arm" type="capsule" fromto="0 0 0 -0.42 -0.42 0" size="0.018"
+            mass="0.055" material="arm_mat"/>
+
+      <body name="rotor_fl" pos="0.42 0.42 0" gravcomp="1">
+        <geom type="cylinder" size="0.13 0.006" mass="0.025" material="prop_mat"/>
+        <site name="thrust_fl" pos="0 0 0.02" size="0.025" rgba="0.1 0.45 0.95 1"/>
+      </body>
+      <body name="rotor_fr" pos="0.42 -0.42 0" gravcomp="1">
+        <geom type="cylinder" size="0.13 0.006" mass="0.025" material="prop_mat"/>
+        <site name="thrust_fr" pos="0 0 0.02" size="0.025" rgba="0.1 0.45 0.95 1"/>
+      </body>
+      <body name="rotor_rl" pos="-0.42 0.42 0" gravcomp="1">
+        <geom type="cylinder" size="0.13 0.006" mass="0.025" material="prop_mat"/>
+        <site name="thrust_rl" pos="0 0 0.02" size="0.025" rgba="0.95 0.24 0.18 1"/>
+      </body>
+      <body name="rotor_rr" pos="-0.42 -0.42 0" gravcomp="1">
+        <geom type="cylinder" size="0.13 0.006" mass="0.025" material="prop_mat"/>
+        <site name="thrust_rr" pos="0 0 0.02" size="0.025" rgba="0.95 0.24 0.18 1"/>
+      </body>
+    </body>
+  </worldbody>
+</mujoco>
