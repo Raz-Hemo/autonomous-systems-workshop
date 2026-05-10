@@ -6,7 +6,7 @@
   <visual>
     <headlight diffuse="0.95 0.95 0.9" ambient="0.55 0.58 0.62" specular="0.15 0.15 0.15"/>
     <rgba haze="0.53 0.75 1 1"/>
-    <global azimuth="135" elevation="-25"/>
+    <global azimuth="135" elevation="-25" offwidth="1920" offheight="1080"/>
   </visual>
 
   <asset>
@@ -25,7 +25,7 @@
     <material name="car_window_mat" rgba="0.12 0.22 0.32 1" specular="0.4" shininess="0.6"/>
     <material name="wheel_mat" rgba="0.015 0.015 0.015 1"/>
     <material name="aruco_mat" texture="aruco_board" texrepeat="1 1" texuniform="false"
-              specular="0.05" shininess="0.1"/>
+              specular="0" shininess="0"/>
     <material name="trunk_mat" rgba="0.36 0.22 0.1 1"/>
     <material name="leaf_mat" rgba="0.05 0.48 0.16 1"/>
   </asset>
@@ -73,7 +73,7 @@
             material="car_body_mat"/>
       <geom name="car_cabin" type="box" pos="-0.08 0 0.42" size="0.34 0.28 0.13"
             material="car_window_mat"/>
-      <geom name="landing_platform" type="box" pos="0 0 0.61" size="0.52 0.52 0.025"
+      <geom name="landing_platform" type="box" pos="0 0 0.61" size="0.72 0.72 0.025"
             material="aruco_mat"/>
       <geom name="wheel_fl" type="cylinder" pos="0.43 0.39 0.04" euler="90 0 0"
             size="0.105 0.055" material="wheel_mat"/>
@@ -85,7 +85,7 @@
             size="0.105 0.055" material="wheel_mat"/>
     </body>
 
-    <body name="quadcopter" pos="0 0 10.0" gravcomp="1">
+    <body name="quadcopter" pos="0 0 6.0" gravcomp="1">
       <freejoint name="root"/>
 
       <camera name="drone_cam" pos="0.16 0 -0.035" xyaxes="0 -1 0 0.7071068 0 0.7071068"
