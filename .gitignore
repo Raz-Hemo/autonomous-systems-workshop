@@ -1,2 +1,4 @@
 .venv
 mujoco-3.6.0-windows-x86_64
+*.pyc
+__pycache__/
