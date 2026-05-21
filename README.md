@@ -15,6 +15,13 @@ uv pip install -r requirements.txt
 ## Running 
 `uv run run_viewer.py`
 
+Wind can be configured from the CLI:
+
+```
+uv run run_viewer.py --wind-strength 0
+uv run run_viewer.py --wind-strength 1.2
+```
+
 controls:
 
 - w/a/s/d - move
