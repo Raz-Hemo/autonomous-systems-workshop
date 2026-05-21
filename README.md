@@ -15,11 +15,10 @@ uv pip install -r requirements.txt
 ## Running 
 `uv run run_viewer.py`
 
-Wind can be configured from the CLI:
+There are many CLI arguments available, run `uv run run_viewer.py --help` for details.
 
 ```
-uv run run_viewer.py --wind-strength 0
-uv run run_viewer.py --wind-strength 1.2
+uv run .\run_viewer.py --wind-strength 0 --policy mpc-fov --car-motion straight --car-speed 2
 ```
 
 controls:

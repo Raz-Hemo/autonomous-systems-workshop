@@ -9,6 +9,7 @@ import numpy as np
 
 from sim.config import (
     CAR_LINEAR_SPEED,
+    DRONE_CAMERA_DOWN_ANGLE_DEG,
     DRONE_CAMERA_NAME,
     LANDING_PLATFORM_GEOM_NAME,
     MODEL_PATH,
@@ -63,6 +64,12 @@ def parse_args() -> argparse.Namespace:
         default=CAR_LINEAR_SPEED,
         help="Nominal platform speed in m/s.",
     )
+    parser.add_argument(
+        "--drone-camera-down-angle",
+        type=float,
+        default=DRONE_CAMERA_DOWN_ANGLE_DEG,
+        help="Drone camera pitch in degrees downward from horizontal.",
+    )
     return parser.parse_args()
 
 
@@ -82,6 +89,24 @@ def make_policy(
     if args.policy == "chase-plop":
         return ChasePlopPolicy(model, controller, vision, drone_camera_id, car_trajectory)
     raise ValueError(f"Unsupported policy: {args.policy}")
+
+
+def set_drone_camera_down_angle(
+    model: mujoco.MjModel,
+    camera_id: int,
+    down_angle_deg: float,
+) -> None:
+    angle = math.radians(float(np.clip(down_angle_deg, 0.0, 89.9)))
+    forward_axis = np.array([math.cos(angle), 0.0, -math.sin(angle)])
+    x_axis = np.array([0.0, -1.0, 0.0])
+    z_axis = -forward_axis
+    y_axis = np.cross(z_axis, x_axis)
+    y_axis /= np.linalg.norm(y_axis)
+    camera_mat = np.column_stack((x_axis, y_axis, z_axis)).reshape(-1)
+    camera_quat = np.zeros(4)
+    mujoco.mju_mat2Quat(camera_quat, camera_mat)
+    model.cam_quat[camera_id] = camera_quat
+    model.cam_mat0[camera_id] = camera_mat
 
 
 def main() -> None:
@@ -107,6 +132,7 @@ def main() -> None:
         )
         if drone_camera_id < 0:
             raise RuntimeError(f"Could not find camera '{DRONE_CAMERA_NAME}' in {MODEL_PATH}.")
+        set_drone_camera_down_angle(model, drone_camera_id, args.drone_camera_down_angle)
         landing_platform_geom_id = mujoco.mj_name2id(
             model, mujoco.mjtObj.mjOBJ_GEOM, LANDING_PLATFORM_GEOM_NAME
         )

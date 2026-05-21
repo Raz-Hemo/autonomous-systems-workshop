@@ -11,6 +11,7 @@ MODEL_PATH = ROOT / "models" / "basic_scene.xml"
 ARUCO_TEXTURE_PATH = ROOT / "assets" / "aruco_board.png"
 
 DRONE_CAMERA_NAME = "drone_cam"
+DRONE_CAMERA_DOWN_ANGLE_DEG = 45.0
 QUADCOPTER_BODY_NAME = "quadcopter"
 ROOT_JOINT_NAME = "root"
 ROTOR_SITE_NAMES = ("thrust_fl", "thrust_fr", "thrust_rl", "thrust_rr")
