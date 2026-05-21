@@ -20,7 +20,7 @@ from sim.config import (
 from sim.motor_mixing import DroneController
 from sim.policies import BehaviorPolicy, ChasePlopPolicy, MPCFoVPolicy, StableYawPolicy
 from sim.rendering import (
-    FreeCamera,
+    AutoTrackingCamera,
     add_camera_frustum,
     add_debug_arrow,
     add_debug_sphere,
@@ -141,7 +141,7 @@ def main() -> None:
                 f"Could not find geom '{LANDING_PLATFORM_GEOM_NAME}' in {MODEL_PATH}."
             )
 
-        camera = FreeCamera()
+        camera = AutoTrackingCamera()
         drone_camera = mujoco.MjvCamera()
         mujoco.mjv_defaultCamera(drone_camera)
         drone_camera.type = mujoco.mjtCamera.mjCAMERA_FIXED
@@ -162,9 +162,6 @@ def main() -> None:
         context = mujoco.MjrContext(model, mujoco.mjtFontScale.mjFONTSCALE_150)
 
         glfw.set_key_callback(window, key_callback)
-        glfw.set_cursor_pos_callback(window, camera.cursor_callback)
-        glfw.set_mouse_button_callback(window, camera.mouse_button_callback)
-        glfw.set_scroll_callback(window, camera.scroll_callback)
 
         last_time = glfw.get_time()
         while not glfw.window_should_close(window):
@@ -173,7 +170,6 @@ def main() -> None:
             last_time = now
 
             glfw.poll_events()
-            camera.update_keyboard(window, dt)
             while data.time < now:
                 policy.step(model, data)
                 wind.apply(model, data)
@@ -186,6 +182,12 @@ def main() -> None:
             drone_view_height = int(drone_view_width * 9 / 16)
             drone_viewport = mujoco.MjrRect(16, 16, drone_view_width, drone_view_height)
             drone_aspect = drone_view_width / max(1, drone_view_height)
+            camera.update(
+                data.xpos[controller.body_id],
+                data.geom_xpos[landing_platform_geom_id],
+                viewport_width / max(1, viewport_height),
+                dt,
+            )
 
             mujoco.mjv_updateScene(
                 model,
@@ -257,7 +259,7 @@ def main() -> None:
                     vision.status = "vision: offscreen buffer unavailable"
                 mujoco.mjr_setBuffer(mujoco.mjtFramebuffer.mjFB_WINDOW, context)
 
-            overlay = "WASD move | Q/E up-down | right mouse look | wheel zoom | Esc/Space quit"
+            overlay = "Auto camera | Esc/Space quit"
             right_overlay = (
                 f"{controller.status} | {getattr(policy, 'car_controller', policy).status} | "
                 f"{wind.status} | {vision.overlay_status()}"

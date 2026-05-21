@@ -20,11 +20,3 @@ There are many CLI arguments available, run `uv run run_viewer.py --help` for de
 ```
 uv run .\run_viewer.py --wind-strength 0 --policy mpc-fov --car-motion straight --car-speed 2
 ```
-
-controls:
-
-- w/a/s/d - move
-- q/e - move down/up
-- right mouse drag: look around
-- mouse wheel: zoom
-- escape or space: quit

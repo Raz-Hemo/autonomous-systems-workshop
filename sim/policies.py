@@ -30,7 +30,9 @@ from .config import (
     MPC_CONTROL_EFFORT_WEIGHT,
     MPC_FOV_MARGIN,
     MPC_FOV_PENALTY,
+    MPC_BAD_IMAGE_EDGE,
     MPC_GOOD_FOV_SLACK,
+    MPC_GOOD_IMAGE_EDGE,
     MPC_HORIZON_SECONDS,
     MPC_LANDING_ERROR_WEIGHT,
     MPC_MIN_BEHIND_DISTANCE,
@@ -298,16 +300,37 @@ class MPCFoVPolicy(ChasePlopPolicy):
         self.status = f"policy: {mode}"
 
     def _update_approach_phase(self, dt: float) -> None:
-        if self.cached_fov_slack > MPC_GOOD_FOV_SLACK:
+        confidence = self._predicted_fov_confidence()
+        if self.vision.target_world is not None:
+            confidence = max(confidence, self._detected_fov_confidence())
+
+        if confidence >= 1.0:
             self.approach_phase += MPC_APPROACH_PHASE_RATE * dt
-        elif self.cached_fov_slack < MPC_BAD_FOV_SLACK:
+        elif confidence <= 0.0:
             self.approach_phase -= MPC_RETREAT_PHASE_RATE * dt
         else:
-            slack_range = MPC_GOOD_FOV_SLACK - MPC_BAD_FOV_SLACK
-            confidence = (self.cached_fov_slack - MPC_BAD_FOV_SLACK) / slack_range
             self.approach_phase += MPC_APPROACH_PHASE_RATE * 0.35 * confidence * dt
 
         self.approach_phase = float(np.clip(self.approach_phase, 0.0, 1.0))
+
+    def _predicted_fov_confidence(self) -> float:
+        if self.cached_fov_slack >= MPC_GOOD_FOV_SLACK:
+            return 1.0
+        if self.cached_fov_slack <= MPC_BAD_FOV_SLACK:
+            return 0.0
+
+        slack_range = MPC_GOOD_FOV_SLACK - MPC_BAD_FOV_SLACK
+        return float((self.cached_fov_slack - MPC_BAD_FOV_SLACK) / slack_range)
+
+    def _detected_fov_confidence(self) -> float:
+        image_edge = float(np.max(np.abs(self.vision.image_error)))
+        if image_edge <= MPC_GOOD_IMAGE_EDGE:
+            return 1.0
+        if image_edge >= MPC_BAD_IMAGE_EDGE:
+            return 0.0
+
+        edge_range = MPC_BAD_IMAGE_EDGE - MPC_GOOD_IMAGE_EDGE
+        return float((MPC_BAD_IMAGE_EDGE - image_edge) / edge_range)
 
     def _choose_mpc_target(
         self,

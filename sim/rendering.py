@@ -84,6 +84,80 @@ class FreeCamera:
         self.camera.distance = float(np.clip(self.camera.distance * (0.9 ** yoffset), 0.4, 15.0))
 
 
+class AutoTrackingCamera:
+    def __init__(self) -> None:
+        self.camera = mujoco.MjvCamera()
+        mujoco.mjv_defaultCamera(self.camera)
+        self.camera.type = mujoco.mjtCamera.mjCAMERA_FREE
+        self.camera.lookat[:] = np.array([6.0, 0.0, 2.0])
+        self.camera.distance = 9.0
+        self.camera.azimuth = 135.0
+        self.camera.elevation = -55.0
+
+        self.min_distance = 6.0
+        self.max_distance = 45.0
+        self.padding = 1.25
+        self.subject_radius = 1.0
+        self.fovy = math.radians(45.0)
+        self.smoothing = 8.0
+
+    def update(
+        self,
+        drone_pos: np.ndarray,
+        car_pos: np.ndarray,
+        aspect: float,
+        dt: float,
+    ) -> None:
+        car_focus = car_pos + np.array([0.0, 0.0, 0.35])
+        desired_lookat = (drone_pos + car_focus) * 0.5
+        desired_lookat[2] = max(0.8, desired_lookat[2])
+
+        distance = self._framing_distance(
+            np.array([drone_pos, car_focus]),
+            desired_lookat,
+            max(0.1, aspect),
+        )
+        alpha = 1.0 - math.exp(-self.smoothing * max(0.0, dt))
+        self.camera.lookat[:] = (1.0 - alpha) * self.camera.lookat + alpha * desired_lookat
+        self.camera.distance = float((1.0 - alpha) * self.camera.distance + alpha * distance)
+
+    def _framing_distance(
+        self,
+        points: np.ndarray,
+        lookat: np.ndarray,
+        aspect: float,
+    ) -> float:
+        forward, right, up = self._view_axes()
+        deltas = points - lookat
+        horizontal_extent = max(abs(float(delta @ right)) for delta in deltas) + self.subject_radius
+        vertical_extent = max(abs(float(delta @ up)) for delta in deltas) + self.subject_radius
+
+        half_y = math.tan(self.fovy * 0.5)
+        half_x = half_y * aspect
+        distance = max(horizontal_extent / half_x, vertical_extent / half_y) * self.padding
+
+        depth_extent = max(abs(float(delta @ forward)) for delta in deltas)
+        distance += depth_extent * 0.35
+        return float(np.clip(distance, self.min_distance, self.max_distance))
+
+    def _view_axes(self) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+        azimuth = math.radians(self.camera.azimuth)
+        elevation = math.radians(self.camera.elevation)
+        forward = np.array(
+            [
+                math.cos(elevation) * math.cos(azimuth),
+                math.cos(elevation) * math.sin(azimuth),
+                math.sin(elevation),
+            ]
+        )
+        forward /= np.linalg.norm(forward)
+        right = np.cross(forward, np.array([0.0, 0.0, 1.0]))
+        right /= np.linalg.norm(right)
+        up = np.cross(right, forward)
+        up /= np.linalg.norm(up)
+        return forward, right, up
+
+
 def key_callback(window: glfw._GLFWwindow, key: int, scancode: int, action: int, mods: int) -> None:
     if action == glfw.PRESS and key in (glfw.KEY_ESCAPE, glfw.KEY_SPACE):
         glfw.set_window_should_close(window, True)
