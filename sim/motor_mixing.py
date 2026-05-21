@@ -112,11 +112,10 @@ class DroneController:
 
         return np.clip(base_forces + rp_forces * rp_scale, 0.0, MAX_ROTOR_THRUST)
 
-    def set_target_xy(self, target_xy: np.ndarray, target_velocity_xy: np.ndarray | None = None) -> None:
+    def set_target_xy(self, target_xy: np.ndarray, target_velocity_xy: np.ndarray) -> None:
         self.target_xy = target_xy.copy()
-        self.target_velocity_xy = (
-            np.zeros(2) if target_velocity_xy is None else target_velocity_xy.copy()
-        )
+        self.target_velocity_xy = target_velocity_xy.copy()
+        
 
     def set_target_yaw_from_velocity(self, velocity_xy: np.ndarray, dt: float) -> None:
         speed = float(np.linalg.norm(velocity_xy))

@@ -42,6 +42,7 @@ class FreeCamera:
         if glfw.get_key(window, glfw.KEY_Q) == glfw.PRESS:
             movement -= np.array([0.0, 0.0, 1.0])
 
+        # Normalize movement to have consistent speed in all directions, including diagonals
         norm = np.linalg.norm(movement)
         if norm > 0:
             self.camera.lookat[:] += movement / norm * self.move_speed * dt

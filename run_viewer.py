@@ -48,7 +48,7 @@ def parse_args() -> argparse.Namespace:
         "--yaw-only-rate",
         type=float,
         default=None,
-        help="Yaw rate in deg/s for --policy yaw-only. Also selects yaw-only if provided.",
+        help="Yaw rate in deg/s for --policy yaw-only",
     )
     return parser.parse_args()
 
@@ -56,18 +56,18 @@ def parse_args() -> argparse.Namespace:
 def make_policy(
     args: argparse.Namespace,
     model: mujoco.MjModel,
-    data: mujoco.MjData,
     controller: DroneController,
     vision: ArucoVision,
     drone_camera_id: int,
 ) -> BehaviorPolicy:
-    policy_name = "yaw-only" if args.yaw_only_rate is not None else args.policy
-    if policy_name == "yaw-only":
+    if args.policy == "yaw-only":
         yaw_rate = 0.0 if args.yaw_only_rate is None else math.radians(args.yaw_only_rate)
         return StableYawPolicy(controller, yaw_rate)
-    if policy_name == "mpc-fov":
+    if args.policy == "mpc-fov":
         return MPCFoVPolicy(model, controller, vision, drone_camera_id)
-    return ChasePlopPolicy(model, controller, vision, drone_camera_id)
+    if args.policy == "chase-plop":
+        return ChasePlopPolicy(model, controller, vision, drone_camera_id)
+    raise ValueError(f"Unsupported policy: {args.policy}")
 
 
 def main() -> None:
@@ -112,7 +112,7 @@ def main() -> None:
             vision.status = "vision: could not write marker texture"
 
         controller = DroneController(model, data)
-        policy = make_policy(args, model, data, controller, vision, drone_camera_id)
+        policy = make_policy(args, model, controller, vision, drone_camera_id)
         wind = WindDisturbance(controller.body_id, args.wind_strength)
 
         option = mujoco.MjvOption()
