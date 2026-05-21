@@ -8,6 +8,7 @@ import mujoco
 import numpy as np
 
 from sim.config import (
+    CAR_LINEAR_SPEED,
     DRONE_CAMERA_NAME,
     LANDING_PLATFORM_GEOM_NAME,
     MODEL_PATH,
@@ -27,7 +28,7 @@ from sim.rendering import (
     key_callback,
 )
 from sim.vision import ArucoVision, ensure_aruco_marker_texture
-from sim.world import WindDisturbance
+from sim.world import CarTrajectory, WindDisturbance
 
 
 def parse_args() -> argparse.Namespace:
@@ -50,6 +51,18 @@ def parse_args() -> argparse.Namespace:
         default=None,
         help="Yaw rate in deg/s for --policy yaw-only",
     )
+    parser.add_argument(
+        "--car-motion",
+        choices=("circle", "straight", "sine"),
+        default="circle",
+        help="Platform trajectory shape.",
+    )
+    parser.add_argument(
+        "--car-speed",
+        type=float,
+        default=CAR_LINEAR_SPEED,
+        help="Nominal platform speed in m/s.",
+    )
     return parser.parse_args()
 
 
@@ -59,14 +72,15 @@ def make_policy(
     controller: DroneController,
     vision: ArucoVision,
     drone_camera_id: int,
+    car_trajectory: CarTrajectory,
 ) -> BehaviorPolicy:
     if args.policy == "yaw-only":
         yaw_rate = 0.0 if args.yaw_only_rate is None else math.radians(args.yaw_only_rate)
         return StableYawPolicy(controller, yaw_rate)
     if args.policy == "mpc-fov":
-        return MPCFoVPolicy(model, controller, vision, drone_camera_id)
+        return MPCFoVPolicy(model, controller, vision, drone_camera_id, car_trajectory)
     if args.policy == "chase-plop":
-        return ChasePlopPolicy(model, controller, vision, drone_camera_id)
+        return ChasePlopPolicy(model, controller, vision, drone_camera_id, car_trajectory)
     raise ValueError(f"Unsupported policy: {args.policy}")
 
 
@@ -112,7 +126,8 @@ def main() -> None:
             vision.status = "vision: could not write marker texture"
 
         controller = DroneController(model, data)
-        policy = make_policy(args, model, controller, vision, drone_camera_id)
+        car_trajectory = CarTrajectory(args.car_motion, args.car_speed)
+        policy = make_policy(args, model, controller, vision, drone_camera_id, car_trajectory)
         wind = WindDisturbance(controller.body_id, args.wind_strength)
 
         option = mujoco.MjvOption()

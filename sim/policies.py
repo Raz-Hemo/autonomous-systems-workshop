@@ -55,7 +55,7 @@ from .config import (
 from .math_utils import rotation_to_euler_xyz, wrap_angle
 from .motor_mixing import DroneController
 from .vision import ArucoVision
-from .world import CarController, landing_car_velocity
+from .world import CarController, CarTrajectory
 
 
 class BehaviorPolicy(ABC):
@@ -90,11 +90,13 @@ class ChasePlopPolicy(BehaviorPolicy):
         controller: DroneController,
         vision: ArucoVision,
         drone_camera_id: int,
+        car_trajectory: CarTrajectory | None = None,
     ) -> None:
         super().__init__(controller)
         self.vision = vision
         self.drone_camera_id = drone_camera_id
-        self.car_controller = CarController(model)
+        self.car_trajectory = CarTrajectory() if car_trajectory is None else car_trajectory
+        self.car_controller = CarController(model, self.car_trajectory)
         self.landing_platform_geom_id = mujoco.mj_name2id(
             model, mujoco.mjtObj.mjOBJ_GEOM, LANDING_PLATFORM_GEOM_NAME
         )
@@ -106,7 +108,7 @@ class ChasePlopPolicy(BehaviorPolicy):
         mujoco.mj_forward(model, data)
 
         platform_xy = data.geom_xpos[self.landing_platform_geom_id, :2]
-        platform_velocity = landing_car_velocity(data.time)
+        platform_velocity = self.car_trajectory.velocity(data.time)
         platform_top_height = (
             data.geom_xpos[self.landing_platform_geom_id, 2]
             + model.geom_size[self.landing_platform_geom_id, 2]
@@ -171,8 +173,9 @@ class MPCFoVPolicy(ChasePlopPolicy):
         controller: DroneController,
         vision: ArucoVision,
         drone_camera_id: int,
+        car_trajectory: CarTrajectory | None = None,
     ) -> None:
-        super().__init__(model, controller, vision, drone_camera_id)
+        super().__init__(model, controller, vision, drone_camera_id, car_trajectory)
         self.next_plan_time = -math.inf
         self.cached_target_xy = controller.target_xy.copy()
         self.cached_clearance = LANDING_CLEARANCE
@@ -185,7 +188,7 @@ class MPCFoVPolicy(ChasePlopPolicy):
         mujoco.mj_forward(model, data)
 
         platform_xy = data.geom_xpos[self.landing_platform_geom_id, :2]
-        platform_velocity = landing_car_velocity(data.time)
+        platform_velocity = self.car_trajectory.velocity(data.time)
         platform_top_height = (
             data.geom_xpos[self.landing_platform_geom_id, 2]
             + model.geom_size[self.landing_platform_geom_id, 2]
