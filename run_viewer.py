@@ -25,6 +25,7 @@ from sim.rendering import (
     add_debug_arrow,
     add_debug_sphere,
     add_line,
+    draw_detection_bbox,
     draw_viewport_border,
     key_callback,
 )
@@ -111,7 +112,8 @@ def set_drone_camera_down_angle(
 
 def main() -> None:
     args = parse_args()
-    aruco_texture_ready = ensure_aruco_marker_texture()
+    # commented out because i edited the marker manually to inlcude a nested marker to help the drone see it from up close
+    #ensure_aruco_marker_texture()
 
     if not glfw.init():
         raise RuntimeError("Could not initialize GLFW.")
@@ -148,8 +150,6 @@ def main() -> None:
         drone_camera.fixedcamid = drone_camera_id
 
         vision = ArucoVision(model, drone_camera_id)
-        if not aruco_texture_ready and vision.enabled:
-            vision.status = "vision: could not write marker texture"
 
         controller = DroneController(model, data)
         car_trajectory = CarTrajectory(args.car_motion, args.car_speed)
@@ -239,6 +239,7 @@ def main() -> None:
                 drone_scene,
             )
             mujoco.mjr_render(drone_viewport, drone_scene, context)
+            draw_detection_bbox(drone_viewport, vision.marker_bbox)
             draw_viewport_border(drone_viewport)
 
             if vision.should_update(data.time):

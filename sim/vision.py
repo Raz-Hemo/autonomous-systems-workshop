@@ -49,6 +49,7 @@ class ArucoVision:
         self.camera_id = camera_id
         self.target_world: np.ndarray | None = None
         self.image_error = np.zeros(2)
+        self.marker_bbox: tuple[int, int, int, int, int, int] | None = None
         self.last_roi: tuple[int, int, int, int] | None = None
         self.last_update_time = -math.inf
         self.frame_count = 0
@@ -78,9 +79,9 @@ class ArucoVision:
         self.input_queue: queue.Queue[tuple[np.ndarray, np.ndarray, np.ndarray, float]] = (
             queue.Queue(maxsize=1)
         )
-        self.output_queue: queue.Queue[tuple[np.ndarray | None, np.ndarray, str]] = queue.Queue(
-            maxsize=1
-        )
+        self.output_queue: queue.Queue[
+            tuple[np.ndarray | None, np.ndarray, tuple[int, int, int, int, int, int] | None, str]
+        ] = queue.Queue(maxsize=1)
         self.stop_event = threading.Event()
         self.worker = threading.Thread(target=self._worker_loop, name="aruco-vision", daemon=True)
         self.worker.start()
@@ -122,12 +123,13 @@ class ArucoVision:
             return
 
         try:
-            target_world, image_error, status = self.output_queue.get_nowait()
+            target_world, image_error, marker_bbox, status = self.output_queue.get_nowait()
         except queue.Empty:
             return
 
         self.target_world = target_world
         self.image_error = image_error
+        self.marker_bbox = marker_bbox
         self.status = status
         self.pending = False
         self.worker_status = "idle"
@@ -160,7 +162,9 @@ class ArucoVision:
                 continue
 
             started_at = time.perf_counter()
-            target_world, image_error, status = self._detect(image_rgb, camera_pos, camera_mat)
+            target_world, image_error, marker_bbox, status = self._detect(
+                image_rgb, camera_pos, camera_mat
+            )
             elapsed_ms = (time.perf_counter() - started_at) * 1000.0
             status = f"{status} {elapsed_ms:.0f}ms"
             while not self.output_queue.empty():
@@ -168,14 +172,14 @@ class ArucoVision:
                     self.output_queue.get_nowait()
                 except queue.Empty:
                     break
-            self.output_queue.put((target_world, image_error, status))
+            self.output_queue.put((target_world, image_error, marker_bbox, status))
 
     def _detect(
         self,
         image_rgb: np.ndarray,
         camera_pos: np.ndarray,
         camera_mat: np.ndarray,
-    ) -> tuple[np.ndarray | None, np.ndarray, str]:
+    ) -> tuple[np.ndarray | None, np.ndarray, tuple[int, int, int, int, int, int] | None, str]:
         image_rgb = np.flipud(image_rgb)
         gray = cv2.cvtColor(image_rgb, cv2.COLOR_RGB2GRAY)
         height, width = gray.shape
@@ -203,14 +207,15 @@ class ArucoVision:
 
         if ids is None:
             self.last_roi = None
-            return None, np.zeros(2), "vision: searching"
+            return None, np.zeros(2), None, "vision: searching"
 
         marker_indices = np.flatnonzero(ids.reshape(-1) == ARUCO_MARKER_ID)
         if len(marker_indices) == 0:
             self.last_roi = None
-            return None, np.zeros(2), "vision: marker id not found"
+            return None, np.zeros(2), None, "vision: marker id not found"
 
         marker_corners = [corners[int(marker_indices[0])]]
+        marker_bbox = self._make_bbox(marker_corners[0], width, height)
         self.last_roi = self._make_roi(marker_corners[0], width, height)
         marker_center = marker_corners[0].reshape(-1, 2).mean(axis=0)
         image_error = np.array(
@@ -244,7 +249,7 @@ class ArucoVision:
             f"img=({image_error[0]:+.2f},{image_error[1]:+.2f}) "
             f"@ {VISION_FPS:.0f}Hz {search_mode}"
         )
-        return target_world, image_error, status
+        return target_world, image_error, marker_bbox, status
 
     def _detect_markers(
         self, gray: np.ndarray
@@ -271,3 +276,15 @@ class ArucoVision:
         x1 = min(width, int(max_xy[0]) + margin)
         y1 = min(height, int(max_xy[1]) + margin)
         return x0, y0, x1, y1
+
+    def _make_bbox(
+        self, marker_corners: np.ndarray, width: int, height: int
+    ) -> tuple[int, int, int, int, int, int]:
+        points = marker_corners.reshape(-1, 2)
+        min_xy = points.min(axis=0)
+        max_xy = points.max(axis=0)
+        x0 = max(0, int(math.floor(float(min_xy[0]))))
+        y0 = max(0, int(math.floor(float(min_xy[1]))))
+        x1 = min(width, int(math.ceil(float(max_xy[0]))))
+        y1 = min(height, int(math.ceil(float(max_xy[1]))))
+        return x0, y0, x1, y1, width, height

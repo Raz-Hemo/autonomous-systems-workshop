@@ -240,6 +240,32 @@ def draw_viewport_border(viewport: mujoco.MjrRect, thickness: int = 2) -> None:
     mujoco.mjr_rectangle(mujoco.MjrRect(left + width - thickness, bottom, thickness, height), *red)
 
 
+def draw_detection_bbox(
+    viewport: mujoco.MjrRect,
+    bbox: tuple[int, int, int, int, int, int] | None,
+    thickness: int = 2,
+) -> None:
+    if bbox is None:
+        return
+
+    x0, y0, x1, y1, image_width, image_height = bbox
+    if image_width <= 0 or image_height <= 0 or x1 <= x0 or y1 <= y0:
+        return
+
+    left = viewport.left + int(round(x0 / image_width * viewport.width))
+    right = viewport.left + int(round(x1 / image_width * viewport.width))
+    bottom = viewport.bottom + int(round((1.0 - y1 / image_height) * viewport.height))
+    top = viewport.bottom + int(round((1.0 - y0 / image_height) * viewport.height))
+    width = max(thickness, right - left)
+    height = max(thickness, top - bottom)
+
+    green = (0.0, 1.0, 0.2, 1.0)
+    mujoco.mjr_rectangle(mujoco.MjrRect(left, bottom, width, thickness), *green)
+    mujoco.mjr_rectangle(mujoco.MjrRect(left, bottom + height - thickness, width, thickness), *green)
+    mujoco.mjr_rectangle(mujoco.MjrRect(left, bottom, thickness, height), *green)
+    mujoco.mjr_rectangle(mujoco.MjrRect(left + width - thickness, bottom, thickness, height), *green)
+
+
 def add_camera_frustum(
     model: mujoco.MjModel,
     data: mujoco.MjData,
