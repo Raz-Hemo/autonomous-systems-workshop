@@ -106,14 +106,31 @@ class ChasePlopPolicy(BehaviorPolicy):
             raise RuntimeError(f"Could not find geom '{LANDING_PLATFORM_GEOM_NAME}'.")
         self.status = "policy: chase"
 
+    def platform_state(self, model: mujoco.MjModel, data: mujoco.MjData) -> tuple[np.ndarray, np.ndarray, float, str]:
+        direct_xy = data.geom_xpos[self.landing_platform_geom_id, :2]
+        direct_velocity = self.car_trajectory.velocity(data.time)
+        direct_top_height = (
+            data.geom_xpos[self.landing_platform_geom_id, 2]
+            + model.geom_size[self.landing_platform_geom_id, 2]
+        )
+
+        vision_pos = self.vision.dead_reckoned_target_world(data.time)
+        vision_velocity = self.vision.dead_reckoned_target_velocity_world()
+        if vision_pos is not None:
+            velocity_xy = (
+                vision_velocity[:2]
+                if vision_velocity is not None
+                else direct_velocity
+            )
+            return vision_pos[:2], velocity_xy, float(vision_pos[2]), "vision"
+
+        return direct_xy, direct_velocity, float(direct_top_height), "mujoco"
+
     def step(self, model: mujoco.MjModel, data: mujoco.MjData) -> None:
         mujoco.mj_forward(model, data)
 
-        platform_xy = data.geom_xpos[self.landing_platform_geom_id, :2]
-        platform_velocity = self.car_trajectory.velocity(data.time)
-        platform_top_height = (
-            data.geom_xpos[self.landing_platform_geom_id, 2]
-            + model.geom_size[self.landing_platform_geom_id, 2]
+        platform_xy, platform_velocity, platform_top_height, platform_source = (
+            self.platform_state(model, data)
         )
         clearance = float(data.xpos[self.controller.body_id, 2] - platform_top_height)
 
@@ -159,7 +176,7 @@ class ChasePlopPolicy(BehaviorPolicy):
 
         self.controller.apply(model, data)
         if self.controller.motors_enabled:
-            self.controller.status += f" yawerr={math.degrees(yaw_error):.0f}deg"
+            self.controller.status += f" yawerr={math.degrees(yaw_error):.0f}deg loc={platform_source}"
 
         self.car_controller.apply(model, data)
         mode = "capture" if should_capture else "chase"
@@ -189,11 +206,8 @@ class MPCFoVPolicy(ChasePlopPolicy):
     def step(self, model: mujoco.MjModel, data: mujoco.MjData) -> None:
         mujoco.mj_forward(model, data)
 
-        platform_xy = data.geom_xpos[self.landing_platform_geom_id, :2]
-        platform_velocity = self.car_trajectory.velocity(data.time)
-        platform_top_height = (
-            data.geom_xpos[self.landing_platform_geom_id, 2]
-            + model.geom_size[self.landing_platform_geom_id, 2]
+        platform_xy, platform_velocity, platform_top_height, platform_source = (
+            self.platform_state(model, data)
         )
         clearance = float(data.xpos[self.controller.body_id, 2] - platform_top_height)
 
@@ -291,8 +305,7 @@ class MPCFoVPolicy(ChasePlopPolicy):
         if self.controller.motors_enabled:
             self.controller.status += (
                 f" yawerr={math.degrees(yaw_error):.0f}deg "
-                f"mpc={self.cached_cost:.1f} fov={self.cached_fov_slack:+.2f} "
-                f"phase={self.approach_phase:.2f} plop={int(final_plop)}"
+                f"phase={self.approach_phase:.2f} plop={int(final_plop)} loc={platform_source}"
             )
 
         self.car_controller.apply(model, data)

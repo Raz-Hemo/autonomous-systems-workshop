@@ -209,6 +209,11 @@ class ArucoVision:
         dt = max(0.0, time - self.tracked_target_time)
         return self.tracked_target_world + self.tracked_target_velocity_world * dt
 
+    def dead_reckoned_target_velocity_world(self) -> np.ndarray | None:
+        if self.tracked_target_world is None:
+            return None
+        return self.tracked_target_velocity_world.copy()
+
     def _detect(
         self,
         image_rgb: np.ndarray,

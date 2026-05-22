@@ -268,16 +268,26 @@ def main() -> None:
                 mujoco.mjr_setBuffer(mujoco.mjtFramebuffer.mjFB_WINDOW, context)
 
             overlay = "Auto camera | Esc/Space quit"
-            right_overlay = (
-                f"{controller.status} | {getattr(policy, 'car_controller', policy).status} | "
-                f"{wind.status} | {vision.overlay_status()}"
+            status_panel = (
+                f"{controller.status}\n"
+                f"{getattr(policy, 'car_controller', policy).status}\n"
+                f"{wind.status}\n"
+                f"{vision.overlay_status()}"
             )
             mujoco.mjr_overlay(
-                mujoco.mjtFontScale.mjFONTSCALE_150,
+                mujoco.mjtFontScale.mjFONTSCALE_100,
                 mujoco.mjtGridPos.mjGRID_TOPLEFT,
                 viewport,
                 overlay,
-                right_overlay,
+                "",
+                context,
+            )
+            mujoco.mjr_overlay(
+                mujoco.mjtFontScale.mjFONTSCALE_100,
+                mujoco.mjtGridPos.mjGRID_BOTTOMRIGHT,
+                viewport,
+                "",
+                status_panel,
                 context,
             )
             glfw.swap_buffers(window)
