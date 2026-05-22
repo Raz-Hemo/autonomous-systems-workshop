@@ -13,10 +13,10 @@ uv pip install -r requirements.txt
 ```
 
 ## Running 
-`uv run run_viewer.py`
+`uv run simulator.py`
 
-There are many CLI arguments available, run `uv run run_viewer.py --help` for details.
+There are many CLI arguments available, run `uv run simulator.py --help` for details.
 
 ```
-uv run run_viewer.py --wind-strength 0 --policy mpc-fov --car-motion straight --car-speed 2
+uv run simulator.py --wind-strength 0 --policy mpc-fov --car-motion straight --car-speed 2
 ```
