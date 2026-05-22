@@ -112,8 +112,7 @@ def set_drone_camera_down_angle(
 
 def main() -> None:
     args = parse_args()
-    # commented out because i edited the marker manually to inlcude a nested marker to help the drone see it from up close
-    #ensure_aruco_marker_texture()
+    ensure_aruco_marker_texture()
 
     if not glfw.init():
         raise RuntimeError("Could not initialize GLFW.")
