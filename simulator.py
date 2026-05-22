@@ -226,6 +226,14 @@ def main() -> None:
                     vision.target_world,
                     np.array([1.0, 0.05, 0.0, 1.0]),
                 )
+            vision_estimate = vision.dead_reckoned_target_world(data.time)
+            if vision_estimate is not None:
+                add_debug_sphere(
+                    scene,
+                    vision_estimate,
+                    0.07,
+                    np.array([1.0, 0.0, 1.0, 1.0]),
+                )
             mujoco.mjr_render(viewport, scene, context)
 
             mujoco.mjv_updateScene(

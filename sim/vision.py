@@ -48,6 +48,11 @@ class ArucoVision:
         self.enabled = cv2 is not None and hasattr(cv2, "aruco")
         self.camera_id = camera_id
         self.target_world: np.ndarray | None = None
+        self.target_time = -math.inf
+        self.target_velocity_world = np.zeros(3)
+        self.tracked_target_world: np.ndarray | None = None
+        self.tracked_target_time = -math.inf
+        self.tracked_target_velocity_world = np.zeros(3)
         self.image_error = np.zeros(2)
         self.marker_bbox: tuple[int, int, int, int, int, int] | None = None
         self.last_roi: tuple[int, int, int, int] | None = None
@@ -80,7 +85,13 @@ class ArucoVision:
             queue.Queue(maxsize=1)
         )
         self.output_queue: queue.Queue[
-            tuple[np.ndarray | None, np.ndarray, tuple[int, int, int, int, int, int] | None, str]
+            tuple[
+                np.ndarray | None,
+                np.ndarray,
+                tuple[int, int, int, int, int, int] | None,
+                float,
+                str,
+            ]
         ] = queue.Queue(maxsize=1)
         self.stop_event = threading.Event()
         self.worker = threading.Thread(target=self._worker_loop, name="aruco-vision", daemon=True)
@@ -123,11 +134,28 @@ class ArucoVision:
             return
 
         try:
-            target_world, image_error, marker_bbox, status = self.output_queue.get_nowait()
+            target_world, image_error, marker_bbox, target_time, status = (
+                self.output_queue.get_nowait()
+            )
         except queue.Empty:
             return
 
+        if target_world is not None and self.tracked_target_world is not None:
+            dt = target_time - self.tracked_target_time
+            if dt > 1e-4:
+                measured_velocity = (target_world - self.tracked_target_world) / dt
+                self.tracked_target_velocity_world = (
+                    0.75 * self.tracked_target_velocity_world + 0.25 * measured_velocity
+                )
+        elif target_world is not None:
+            self.tracked_target_velocity_world[:] = 0.0
+
         self.target_world = target_world
+        if target_world is not None:
+            self.target_time = target_time
+            self.target_velocity_world = self.tracked_target_velocity_world.copy()
+            self.tracked_target_world = target_world
+            self.tracked_target_time = target_time
         self.image_error = image_error
         self.marker_bbox = marker_bbox
         self.status = status
@@ -157,7 +185,7 @@ class ArucoVision:
     def _worker_loop(self) -> None:
         while not self.stop_event.is_set():
             try:
-                image_rgb, camera_pos, camera_mat, _time = self.input_queue.get(timeout=0.05)
+                image_rgb, camera_pos, camera_mat, frame_time = self.input_queue.get(timeout=0.05)
             except queue.Empty:
                 continue
 
@@ -172,7 +200,14 @@ class ArucoVision:
                     self.output_queue.get_nowait()
                 except queue.Empty:
                     break
-            self.output_queue.put((target_world, image_error, marker_bbox, status))
+            self.output_queue.put((target_world, image_error, marker_bbox, frame_time, status))
+
+    def dead_reckoned_target_world(self, time: float) -> np.ndarray | None:
+        if self.tracked_target_world is None:
+            return None
+
+        dt = max(0.0, time - self.tracked_target_time)
+        return self.tracked_target_world + self.tracked_target_velocity_world * dt
 
     def _detect(
         self,
