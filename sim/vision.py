@@ -25,7 +25,7 @@ def ensure_aruco_marker_texture() -> bool:
     if cv2 is None or not hasattr(cv2, "aruco"):
         return False
 
-    dictionary = cv2.aruco.getPredefinedDictionary(cv2.aruco.DICT_4X4_50)
+    dictionary = cv2.aruco.getPredefinedDictionary(cv2.aruco.DICT_6X6_250)
     marker_size = 384
     marker = np.zeros((marker_size, marker_size), dtype=np.uint8)
     if hasattr(cv2.aruco, "generateImageMarker"):
@@ -66,7 +66,7 @@ class ArucoVision:
         if not self.enabled:
             return
 
-        self.dictionary = cv2.aruco.getPredefinedDictionary(cv2.aruco.DICT_4X4_50)
+        self.dictionary = cv2.aruco.getPredefinedDictionary(cv2.aruco.DICT_6X6_250)
         self.parameters = cv2.aruco.DetectorParameters()
         self.parameters.adaptiveThreshWinSizeMin = 3
         self.parameters.adaptiveThreshWinSizeMax = 53
