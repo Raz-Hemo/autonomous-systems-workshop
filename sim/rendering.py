@@ -7,83 +7,6 @@ import mujoco
 import numpy as np
 
 
-class FreeCamera:
-    def __init__(self) -> None:
-        self.camera = mujoco.MjvCamera()
-        mujoco.mjv_defaultCamera(self.camera)
-        self.camera.type = mujoco.mjtCamera.mjCAMERA_FREE
-        self.camera.lookat[:] = np.array([0.0, 0.0, 0.7])
-        self.camera.distance = 3.4
-        self.camera.azimuth = 135.0
-        self.camera.elevation = -25.0
-
-        self.move_speed = 2.7
-        self.mouse_sensitivity = 0.18
-        self.last_cursor: tuple[float, float] | None = None
-        self.mouse_captured = False
-        self.ignore_next_mouse_delta = False
-
-    def update_keyboard(self, window: glfw._GLFWwindow, dt: float) -> None:
-        yaw = math.radians(self.camera.azimuth)
-        forward = np.array([math.cos(yaw), math.sin(yaw), 0.0])
-        right = np.array([math.sin(yaw), -math.cos(yaw), 0.0])
-        movement = np.zeros(3)
-
-        if glfw.get_key(window, glfw.KEY_W) == glfw.PRESS:
-            movement += forward
-        if glfw.get_key(window, glfw.KEY_S) == glfw.PRESS:
-            movement -= forward
-        if glfw.get_key(window, glfw.KEY_D) == glfw.PRESS:
-            movement += right
-        if glfw.get_key(window, glfw.KEY_A) == glfw.PRESS:
-            movement -= right
-        if glfw.get_key(window, glfw.KEY_E) == glfw.PRESS:
-            movement += np.array([0.0, 0.0, 1.0])
-        if glfw.get_key(window, glfw.KEY_Q) == glfw.PRESS:
-            movement -= np.array([0.0, 0.0, 1.0])
-
-        # Normalize movement to have consistent speed in all directions, including diagonals
-        norm = np.linalg.norm(movement)
-        if norm > 0:
-            self.camera.lookat[:] += movement / norm * self.move_speed * dt
-
-    def cursor_callback(self, window: glfw._GLFWwindow, xpos: float, ypos: float) -> None:
-        if self.last_cursor is None:
-            self.last_cursor = (xpos, ypos)
-            return
-
-        dx = xpos - self.last_cursor[0]
-        dy = ypos - self.last_cursor[1]
-        self.last_cursor = (xpos, ypos)
-
-        if not self.mouse_captured or self.ignore_next_mouse_delta:
-            self.ignore_next_mouse_delta = False
-            return
-
-        self.camera.azimuth -= dx * self.mouse_sensitivity
-        self.camera.elevation = float(
-            np.clip(self.camera.elevation - dy * self.mouse_sensitivity, -89.0, 10.0)
-        )
-
-    def mouse_button_callback(
-        self, window: glfw._GLFWwindow, button: int, action: int, mods: int
-    ) -> None:
-        if button != glfw.MOUSE_BUTTON_RIGHT:
-            return
-
-        self.mouse_captured = action == glfw.PRESS
-        glfw.set_input_mode(
-            window,
-            glfw.CURSOR,
-            glfw.CURSOR_DISABLED if self.mouse_captured else glfw.CURSOR_NORMAL,
-        )
-        self.last_cursor = glfw.get_cursor_pos(window)
-        self.ignore_next_mouse_delta = self.mouse_captured
-
-    def scroll_callback(self, window: glfw._GLFWwindow, xoffset: float, yoffset: float) -> None:
-        self.camera.distance = float(np.clip(self.camera.distance * (0.9 ** yoffset), 0.4, 15.0))
-
-
 class AutoTrackingCamera:
     def __init__(self) -> None:
         self.camera = mujoco.MjvCamera()
@@ -108,6 +31,7 @@ class AutoTrackingCamera:
         aspect: float,
         dt: float,
     ) -> None:
+        # focus point is between the drone and the car, but slightly above the car to keep it visible
         car_focus = car_pos + np.array([0.0, 0.0, 0.35])
         desired_lookat = (drone_pos + car_focus) * 0.5
         desired_lookat[2] = max(0.8, desired_lookat[2])
@@ -117,6 +41,8 @@ class AutoTrackingCamera:
             desired_lookat,
             max(0.1, aspect),
         )
+
+        # smooth motion with interpolation
         alpha = 1.0 - math.exp(-self.smoothing * max(0.0, dt))
         self.camera.lookat[:] = (1.0 - alpha) * self.camera.lookat + alpha * desired_lookat
         self.camera.distance = float((1.0 - alpha) * self.camera.distance + alpha * distance)

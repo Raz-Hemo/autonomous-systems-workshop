@@ -270,8 +270,6 @@ def main() -> None:
             overlay = "Auto camera | Esc/Space quit"
             status_panel = (
                 f"{controller.status}\n"
-                f"{getattr(policy, 'car_controller', policy).status}\n"
-                f"{wind.status}\n"
                 f"{vision.overlay_status()}"
             )
             mujoco.mjr_overlay(
@@ -292,8 +290,7 @@ def main() -> None:
             )
             glfw.swap_buffers(window)
     finally:
-        if "vision" in locals():
-            vision.shutdown()
+        vision.shutdown()
         glfw.terminate()
 
 

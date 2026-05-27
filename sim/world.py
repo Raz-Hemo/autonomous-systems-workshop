@@ -111,7 +111,6 @@ class CarController:
         self.dof_adrs = [int(model.jnt_dofadr[joint_id]) for joint_id in joint_ids]
         self.mass = float(model.body_subtreemass[self.body_id])
         self.trajectory = CarTrajectory() if trajectory is None else trajectory
-        self.status = "car: initializing"
 
     def apply(self, model: mujoco.MjModel, data: mujoco.MjData) -> None:
         target_pos = self.trajectory.position(data.time)
@@ -127,11 +126,6 @@ class CarController:
 
         data.qfrc_applied[self.dof_adrs[0]] += force_xy[0]
         data.qfrc_applied[self.dof_adrs[1]] += force_xy[1]
-        self.status = (
-            f"car:{self.trajectory.motion} v={self.trajectory.speed:.1f} "
-            f"err=({pos_error[0]:+.2f},{pos_error[1]:+.2f}) "
-            f"force={force_xy[0]:+.0f},{force_xy[1]:+.0f}N"
-        )
 
 
 class WindDisturbance:
@@ -140,14 +134,8 @@ class WindDisturbance:
         self.strength = max(0.0, strength)
         self.current_segment = -1
         self.force_world = np.zeros(3)
-        self.status = "wind: calm"
 
     def apply(self, model: mujoco.MjModel, data: mujoco.MjData) -> None:
-        if self.strength <= 0.0:
-            self.force_world[:] = 0.0
-            self.status = "wind: disabled"
-            return
-
         segment = int(data.time // WIND_CHANGE_INTERVAL)
         if segment != self.current_segment:
             self.current_segment = segment
@@ -163,7 +151,6 @@ class WindDisturbance:
             self.body_id,
             data.qfrc_applied,
         )
-        self.status = f"wind: ({self.force_world[0]:+.1f},{self.force_world[1]:+.1f})N"
 
     @staticmethod
     def _segment_angle(segment: int) -> float:

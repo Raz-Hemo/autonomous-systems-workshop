@@ -69,6 +69,7 @@ class DroneController:
         rotation = data.xmat[self.body_id].reshape(3, 3)
         _, _, self.target_yaw = rotation_to_euler_xyz(rotation)
 
+        # see https://cookierobotics.com/066/ for the theory
         mixer = np.array(
             [
                 [1.0, 1.0, 1.0, 1.0],
@@ -89,6 +90,7 @@ class DroneController:
         total_thrust = float(np.clip(total_thrust, 0.0, MAX_ROTOR_THRUST * 4.0))
         tau_z = float(np.clip(tau_z, -MAX_YAW_TORQUE, MAX_YAW_TORQUE))
 
+        # This block attempts to apply the full yaw torque, then scales it back if it would cause any rotor to saturate. Otherwise the drone will destabilize.
         base_command = np.array([total_thrust, 0.0, 0.0, tau_z])
         base_forces = self.inverse_mixer @ base_command
         if base_forces.min() < 0.0 or base_forces.max() > MAX_ROTOR_THRUST:
@@ -101,12 +103,17 @@ class DroneController:
                     break
             tau_z *= yaw_scale
 
+        # This block applies the roll/pitch torques with the minimum scaling necessary to avoid saturation.
         rp_forces = self.inverse_mixer @ np.array([0.0, tau_x, tau_y, 0.0])
         rp_scale = 1.0
         for index, delta in enumerate(rp_forces):
+            # if rotor needs more thrust...
             if delta > 0.0:
+                # ...but is already near max, scale back the roll/pitch commands
                 rp_scale = min(rp_scale, (MAX_ROTOR_THRUST - base_forces[index]) / delta)
+            # if rotor needs less thrust...
             elif delta < 0.0:
+                # ...but is already near zero, scale back the roll/pitch commands
                 rp_scale = min(rp_scale, -base_forces[index] / delta)
         rp_scale = float(np.clip(rp_scale, 0.0, 1.0))
 
@@ -180,6 +187,7 @@ class DroneController:
         else:
             xy_scale = 1.0
 
+        # in the terminal phase when landing, the drone should move more sharply to capitalize on its velocity already being aligned, to avoid drifting.
         capture_gains_enabled = self.capture_mode and yaw_error < CAPTURE_YAW_SOFT_LIMIT
         position_kp = CAPTURE_POSITION_KP if capture_gains_enabled else POSITION_KP
         position_kd = CAPTURE_POSITION_KD if capture_gains_enabled else POSITION_KD
@@ -187,6 +195,7 @@ class DroneController:
         max_tilt_target = CAPTURE_MAX_TILT_TARGET if capture_gains_enabled else MAX_TILT_TARGET
         max_tilt_target *= xy_scale
 
+        # so called "pid controller"
         desired_accel_xy = (
             position_kp * xy_error
             + position_ki * self.position_error_integral
@@ -195,6 +204,7 @@ class DroneController:
         if not self.xy_control_enabled:
             desired_accel_xy[:] = 0.0
 
+        # go from desired horizontal acceleration to desired tilt angle, and clamp to avoid demanding impossible tilts
         desired_tilt = np.array([desired_accel_xy[0], desired_accel_xy[1], gravity])
         desired_tilt /= np.linalg.norm(desired_tilt)
         max_horizontal_tilt = math.sin(max_tilt_target)
@@ -225,6 +235,7 @@ class DroneController:
         rotor_forces = self.mix_rotors(total_thrust, tau_x, tau_y, 0.0)
         self.last_forces = rotor_forces
 
+        # Apply forces at each rotor site
         for force, site_id in zip(rotor_forces, self.site_ids):
             force_world = rotation @ np.array([0.0, 0.0, force])
             mujoco.mj_applyFT(
@@ -236,6 +247,8 @@ class DroneController:
                 self.body_id,
                 data.qfrc_applied,
             )
+
+        # Apply yaw torque at the center of mass
         mujoco.mj_applyFT(
             model,
             data,
@@ -247,13 +260,7 @@ class DroneController:
         )
 
         mode = "capture" if capture_gains_enabled else "align" if self.capture_mode else "hold"
-        if self.yaw_rate_target is not None:
-            mode = "yaw-only"
         self.status = (
-            f"{mode}: xy=({xy_error[0]:+.2f},{xy_error[1]:+.2f}) "
-            f"xyscale={xy_scale:.2f} "
-            f"i=({self.position_error_integral[0]:+.1f},{self.position_error_integral[1]:+.1f}) "
-            f"z={height:.2f}/{self.target_height:.2f} "
-            f"motors={rotor_forces[0]:.1f},{rotor_forces[1]:.1f},"
+            f"{mode}, motors={rotor_forces[0]:.1f},{rotor_forces[1]:.1f},"
             f"{rotor_forces[2]:.1f},{rotor_forces[3]:.1f}N"
         )

@@ -6,6 +6,7 @@ import threading
 import time
 
 import mujoco
+import cv2
 import numpy as np
 
 from .config import (
@@ -15,16 +16,9 @@ from .config import (
     VISION_FPS,
 )
 
-try:
-    import cv2
-except ImportError:
-    cv2 = None
 
-
+# creates the texture file aruco_board.png
 def ensure_aruco_marker_texture() -> bool:
-    if cv2 is None or not hasattr(cv2, "aruco"):
-        return False
-
     dictionary = cv2.aruco.getPredefinedDictionary(cv2.aruco.DICT_6X6_250)
     marker_size = 384
     marker = np.zeros((marker_size, marker_size), dtype=np.uint8)
@@ -43,9 +37,9 @@ def ensure_aruco_marker_texture() -> bool:
     return bool(cv2.imwrite(str(ARUCO_TEXTURE_PATH), board))
 
 
+# this uses worker threads to run the relatively expensive aruco detection without blocking the main simulation loop
 class ArucoVision:
     def __init__(self, model: mujoco.MjModel, camera_id: int) -> None:
-        self.enabled = cv2 is not None and hasattr(cv2, "aruco")
         self.camera_id = camera_id
         self.target_world: np.ndarray | None = None
         self.target_time = -math.inf
@@ -63,9 +57,6 @@ class ArucoVision:
         self.worker_status = "idle"
         self.worker_mode = "none"
 
-        if not self.enabled:
-            return
-
         self.dictionary = cv2.aruco.getPredefinedDictionary(cv2.aruco.DICT_6X6_250)
         self.parameters = cv2.aruco.DetectorParameters()
         self.parameters.adaptiveThreshWinSizeMin = 3
@@ -75,11 +66,7 @@ class ArucoVision:
         self.parameters.minMarkerPerimeterRate = 0.015
         self.parameters.maxMarkerPerimeterRate = 0.8
         self.parameters.polygonalApproxAccuracyRate = 0.06
-        self.detector = (
-            cv2.aruco.ArucoDetector(self.dictionary, self.parameters)
-            if hasattr(cv2.aruco, "ArucoDetector")
-            else None
-        )
+        self.detector = cv2.aruco.ArucoDetector(self.dictionary, self.parameters)
         self.fovy = math.radians(float(model.cam_fovy[camera_id]))
         self.input_queue: queue.Queue[tuple[np.ndarray, np.ndarray, np.ndarray, float]] = (
             queue.Queue(maxsize=1)
@@ -100,8 +87,7 @@ class ArucoVision:
 
     def should_update(self, time: float) -> bool:
         return (
-            self.enabled
-            and not self.pending
+            not self.pending
             and time - self.last_update_time >= 1.0 / VISION_FPS
         )
 
@@ -112,10 +98,6 @@ class ArucoVision:
         camera_mat: np.ndarray,
         time: float,
     ) -> None:
-        if not self.enabled:
-            self.target_world = None
-            return
-
         self.last_update_time = time
         self.frame_count += 1
         self.pending = True
@@ -130,9 +112,6 @@ class ArucoVision:
             self.worker_status = "busy"
 
     def poll(self) -> None:
-        if not self.enabled:
-            return
-
         try:
             target_world, image_error, marker_bbox, target_time, status = (
                 self.output_queue.get_nowait()
@@ -163,15 +142,10 @@ class ArucoVision:
         self.worker_status = "idle"
 
     def shutdown(self) -> None:
-        if not self.enabled:
-            return
-
         self.stop_event.set()
         self.worker.join(timeout=0.5)
 
     def overlay_status(self) -> str:
-        if not self.enabled:
-            return self.status
         return f"{self.status} | worker: {self.worker_status} {self.worker_mode}"
 
     def _roi_label(self, width: int, height: int) -> str:
