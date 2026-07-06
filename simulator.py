@@ -199,10 +199,6 @@ def main() -> None:
             )
             add_camera_frustum(model, data, scene, drone_camera_id, drone_aspect)
 
-            platform_marker_pos = data.geom_xpos[landing_platform_geom_id].copy()
-            platform_marker_pos[2] += 0.25
-            add_debug_sphere(scene, platform_marker_pos, 0.06, np.array([0.0, 1.0, 0.2, 1.0]))
-
             hold_marker_pos = np.array(
                 [
                     controller.target_xy[0],
