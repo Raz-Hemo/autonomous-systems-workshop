@@ -170,6 +170,8 @@ def main() -> None:
         car_trajectory = CarTrajectory(args.car_motion, args.car_speed)
         policy = make_policy(args, model, controller, vision, drone_camera_id, car_trajectory)
         wind = WindDisturbance(controller.body_id, args.wind_strength)
+        landing_time: float | None = None
+        battery_thrust_seconds = 0.0
 
         option = mujoco.MjvOption()
         scene = mujoco.MjvScene(model, maxgeom=10000)
@@ -191,6 +193,11 @@ def main() -> None:
             while data.time < target_sim_time and steps_this_frame < MAX_STEPS_PER_FRAME:
                 policy.step(model, data)
                 wind.apply(model, data)
+                battery_thrust_seconds += float(np.sum(controller.last_forces)) * float(
+                    model.opt.timestep
+                )
+                if landing_time is None and not controller.motors_enabled:
+                    landing_time = float(data.time)
                 mujoco.mj_step(model, data)
                 steps_this_frame += 1
             if steps_this_frame >= MAX_STEPS_PER_FRAME:
@@ -286,9 +293,16 @@ def main() -> None:
                 mujoco.mjr_setBuffer(mujoco.mjtFramebuffer.mjFB_WINDOW, context)
 
             overlay = f"Auto camera | Esc/Space quit | time scale {args.time_scale:g}x"
+            landing_metric = (
+                f"landing: {landing_time:.2f}s"
+                if landing_time is not None
+                else f"landing: flying {data.time:.2f}s"
+            )
             status_panel = (
                 f"{controller.status}\n"
-                f"{vision.overlay_status()}"
+                f"{vision.overlay_status()}\n"
+                f"{landing_metric}\n"
+                f"power used: {battery_thrust_seconds:.1f} N*s"
             )
             mujoco.mjr_overlay(
                 mujoco.mjtFontScale.mjFONTSCALE_100,

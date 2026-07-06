@@ -128,14 +128,17 @@ class DroneController:
         speed = float(np.linalg.norm(velocity_xy))
         if speed > YAW_TRAVEL_SPEED_THRESHOLD:
             desired_yaw = math.atan2(float(velocity_xy[1]), float(velocity_xy[0]))
-            yaw_step = float(
-                np.clip(
-                    wrap_angle(desired_yaw - self.target_yaw),
-                    -YAW_TARGET_RATE_LIMIT * dt,
-                    YAW_TARGET_RATE_LIMIT * dt,
-                )
+            self.set_target_yaw_angle(desired_yaw, dt)
+
+    def set_target_yaw_angle(self, desired_yaw: float, dt: float) -> None:
+        yaw_step = float(
+            np.clip(
+                wrap_angle(desired_yaw - self.target_yaw),
+                -YAW_TARGET_RATE_LIMIT * dt,
+                YAW_TARGET_RATE_LIMIT * dt,
             )
-            self.target_yaw = wrap_angle(self.target_yaw + yaw_step)
+        )
+        self.target_yaw = wrap_angle(self.target_yaw + yaw_step)
 
     def approach_target_height(self, target_height: float, dt: float, rate: float) -> None:
         max_step = rate * dt
