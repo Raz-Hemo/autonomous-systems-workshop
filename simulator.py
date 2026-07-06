@@ -33,6 +33,16 @@ from sim.vision import ArucoVision, ensure_aruco_marker_texture
 from sim.world import CarTrajectory, WindDisturbance
 
 
+MAX_STEPS_PER_FRAME = 500
+
+
+def nonnegative_float(value: str) -> float:
+    parsed = float(value)
+    if parsed < 0.0:
+        raise argparse.ArgumentTypeError("must be non-negative")
+    return parsed
+
+
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Run the quadcopter landing simulator.")
     parser.add_argument(
@@ -70,6 +80,12 @@ def parse_args() -> argparse.Namespace:
         type=float,
         default=DRONE_CAMERA_DOWN_ANGLE_DEG,
         help="Drone camera pitch in degrees downward from horizontal.",
+    )
+    parser.add_argument(
+        "--time-scale",
+        type=nonnegative_float,
+        default=1.0,
+        help="Simulation seconds per wall-clock second. Use 0 to pause physics.",
     )
     return parser.parse_args()
 
@@ -163,16 +179,22 @@ def main() -> None:
         glfw.set_key_callback(window, key_callback)
 
         last_time = glfw.get_time()
+        target_sim_time = float(data.time)
         while not glfw.window_should_close(window):
             now = glfw.get_time()
             dt = max(1e-6, now - last_time)
             last_time = now
+            target_sim_time += dt * args.time_scale
 
             glfw.poll_events()
-            while data.time < now:
+            steps_this_frame = 0
+            while data.time < target_sim_time and steps_this_frame < MAX_STEPS_PER_FRAME:
                 policy.step(model, data)
                 wind.apply(model, data)
                 mujoco.mj_step(model, data)
+                steps_this_frame += 1
+            if steps_this_frame >= MAX_STEPS_PER_FRAME:
+                target_sim_time = float(data.time)
             vision.poll()
 
             viewport_width, viewport_height = glfw.get_framebuffer_size(window)
@@ -263,7 +285,7 @@ def main() -> None:
                     vision.status = "vision: offscreen buffer unavailable"
                 mujoco.mjr_setBuffer(mujoco.mjtFramebuffer.mjFB_WINDOW, context)
 
-            overlay = "Auto camera | Esc/Space quit"
+            overlay = f"Auto camera | Esc/Space quit | time scale {args.time_scale:g}x"
             status_panel = (
                 f"{controller.status}\n"
                 f"{vision.overlay_status()}"
