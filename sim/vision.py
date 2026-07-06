@@ -152,7 +152,7 @@ class ArucoVision:
         self.worker.join(timeout=0.5)
 
     def overlay_status(self) -> str:
-        return f"{self.status} | worker: {self.worker_status} {self.worker_mode}"
+        return self.status
 
     def _roi_label(self, width: int, height: int) -> str:
         if self.last_roi is None:
@@ -241,7 +241,7 @@ class ArucoVision:
         marker_indices = np.flatnonzero(ids.reshape(-1) == ARUCO_MARKER_ID)
         if len(marker_indices) == 0:
             self.last_roi = None
-            return None, np.zeros(2), None, None, None, "vision: marker id not found"
+            return None, np.zeros(2), None, None, None, "vision: searching"
 
         marker_corners = [corners[int(marker_indices[0])]]
         marker_bbox = self._make_bbox(marker_corners[0], width, height)
