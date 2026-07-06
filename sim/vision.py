@@ -48,6 +48,8 @@ class ArucoVision:
         self.tracked_target_time = -math.inf
         self.tracked_target_velocity_world = np.zeros(3)
         self.image_error = np.zeros(2)
+        self.marker_image_angle_deg: float | None = None
+        self.target_rvec: np.ndarray | None = None
         self.marker_bbox: tuple[int, int, int, int, int, int] | None = None
         self.last_roi: tuple[int, int, int, int] | None = None
         self.last_update_time = -math.inf
@@ -75,6 +77,8 @@ class ArucoVision:
             tuple[
                 np.ndarray | None,
                 np.ndarray,
+                float | None,
+                np.ndarray | None,
                 tuple[int, int, int, int, int, int] | None,
                 float,
                 str,
@@ -113,7 +117,7 @@ class ArucoVision:
 
     def poll(self) -> None:
         try:
-            target_world, image_error, marker_bbox, target_time, status = (
+            target_world, image_error, marker_angle, target_rvec, marker_bbox, target_time, status = (
                 self.output_queue.get_nowait()
             )
         except queue.Empty:
@@ -136,6 +140,8 @@ class ArucoVision:
             self.tracked_target_world = target_world
             self.tracked_target_time = target_time
         self.image_error = image_error
+        self.marker_image_angle_deg = marker_angle
+        self.target_rvec = None if target_rvec is None else target_rvec.copy()
         self.marker_bbox = marker_bbox
         self.status = status
         self.pending = False
@@ -164,7 +170,7 @@ class ArucoVision:
                 continue
 
             started_at = time.perf_counter()
-            target_world, image_error, marker_bbox, status = self._detect(
+            target_world, image_error, marker_angle, target_rvec, marker_bbox, status = self._detect(
                 image_rgb, camera_pos, camera_mat
             )
             elapsed_ms = (time.perf_counter() - started_at) * 1000.0
@@ -174,7 +180,9 @@ class ArucoVision:
                     self.output_queue.get_nowait()
                 except queue.Empty:
                     break
-            self.output_queue.put((target_world, image_error, marker_bbox, frame_time, status))
+            self.output_queue.put(
+                (target_world, image_error, marker_angle, target_rvec, marker_bbox, frame_time, status)
+            )
 
     def dead_reckoned_target_world(self, time: float) -> np.ndarray | None:
         if self.tracked_target_world is None:
@@ -193,7 +201,14 @@ class ArucoVision:
         image_rgb: np.ndarray,
         camera_pos: np.ndarray,
         camera_mat: np.ndarray,
-    ) -> tuple[np.ndarray | None, np.ndarray, tuple[int, int, int, int, int, int] | None, str]:
+    ) -> tuple[
+        np.ndarray | None,
+        np.ndarray,
+        float | None,
+        np.ndarray | None,
+        tuple[int, int, int, int, int, int] | None,
+        str,
+    ]:
         image_rgb = np.flipud(image_rgb)
         gray = cv2.cvtColor(image_rgb, cv2.COLOR_RGB2GRAY)
         height, width = gray.shape
@@ -221,15 +236,16 @@ class ArucoVision:
 
         if ids is None:
             self.last_roi = None
-            return None, np.zeros(2), None, "vision: searching"
+            return None, np.zeros(2), None, None, None, "vision: searching"
 
         marker_indices = np.flatnonzero(ids.reshape(-1) == ARUCO_MARKER_ID)
         if len(marker_indices) == 0:
             self.last_roi = None
-            return None, np.zeros(2), None, "vision: marker id not found"
+            return None, np.zeros(2), None, None, None, "vision: marker id not found"
 
         marker_corners = [corners[int(marker_indices[0])]]
         marker_bbox = self._make_bbox(marker_corners[0], width, height)
+        marker_angle = self._marker_image_angle(marker_corners[0])
         self.last_roi = self._make_roi(marker_corners[0], width, height)
         marker_center = marker_corners[0].reshape(-1, 2).mean(axis=0)
         image_error = np.array(
@@ -249,11 +265,12 @@ class ArucoVision:
             dtype=np.float64,
         )
         distortion = np.zeros(5)
-        _, tvecs, _ = cv2.aruco.estimatePoseSingleMarkers(
+        rvecs, tvecs, _ = cv2.aruco.estimatePoseSingleMarkers(
             marker_corners, ARUCO_MARKER_LENGTH, camera_matrix, distortion
         )
 
         tvec_cv = tvecs[0, 0]
+        rvec_cv = rvecs[0, 0]
         target_camera = np.array([tvec_cv[0], -tvec_cv[1], -tvec_cv[2]])
         target_world = camera_pos + camera_mat @ target_camera
         search_mode = roi_label if used_roi else "full"
@@ -263,7 +280,7 @@ class ArucoVision:
             f"img=({image_error[0]:+.2f},{image_error[1]:+.2f}) "
             f"@ {VISION_FPS:.0f}Hz {search_mode}"
         )
-        return target_world, image_error, marker_bbox, status
+        return target_world, image_error, marker_angle, rvec_cv, marker_bbox, status
 
     def _detect_markers(
         self, gray: np.ndarray
@@ -302,3 +319,9 @@ class ArucoVision:
         x1 = min(width, int(math.ceil(float(max_xy[0]))))
         y1 = min(height, int(math.ceil(float(max_xy[1]))))
         return x0, y0, x1, y1, width, height
+
+    def _marker_image_angle(self, marker_corners: np.ndarray) -> float:
+        points = marker_corners.reshape(-1, 2)
+        edge = points[1] - points[0]
+        angle = math.degrees(math.atan2(float(edge[1]), float(edge[0])))
+        return (angle + 360.0) % 360.0
