@@ -540,8 +540,24 @@ class CameraCorridorPolicy(ChasePlopPolicy):
         self.status = "policy: camera-corridor"
 
     def step(self, model: mujoco.MjModel, data: mujoco.MjData) -> None:
+        """Advance the camera-corridor landing behavior by one physics step.
+
+        The policy keeps the drone on a moving approach line behind the platform.
+        While the marker is visible, ``approach_phase`` moves from 0 to 1. That
+        phase shrinks both the desired height above the platform and the desired
+        behind-distance. The behind-distance is not arbitrary: for a fixed camera
+        pitch, a target centered in the image lies roughly at
+        ``clearance / tan(camera_down_angle)`` meters ahead of the drone.
+
+        Once the phase, horizontal error, relative speed, and FoV gates are good
+        enough, the policy switches into final plop mode. In that mode the target
+        jumps to a short lead point over the platform, descends aggressively, and
+        cuts motors when the drone is close enough.
+        """
         mujoco.mj_forward(model, data)
 
+        # Read the current relative platform/drone state. platform_state() may use
+        # the vision dead-reckoned estimate after the first successful detection.
         dt = float(model.opt.timestep)
         platform_xy, platform_velocity, platform_top_height, platform_source = (
             self.platform_state(model, data)
@@ -550,6 +566,9 @@ class CameraCorridorPolicy(ChasePlopPolicy):
         drone_xy = drone_pos[:2]
         clearance = float(drone_pos[2] - platform_top_height)
 
+        # Keep the fixed drone camera pointed toward the platform. This is separate
+        # from the horizontal target, because a good approach point can still lose
+        # the marker if yaw lags behind.
         forward = normalized_or_default(platform_velocity, np.array([1.0, 0.0]))
         bearing_to_platform = platform_xy - drone_xy
         if float(np.linalg.norm(bearing_to_platform)) > 1e-4:
@@ -567,6 +586,8 @@ class CameraCorridorPolicy(ChasePlopPolicy):
         relative_xy_speed = float(np.linalg.norm(relative_xy_velocity))
         xy_error_norm = float(np.linalg.norm(platform_xy - drone_xy))
 
+        # Treat FoV confidence as permission to keep committing. Good vision moves
+        # the phase forward, lost/bad vision backs it out, and marginal vision creeps.
         fov_confidence = self._fov_confidence()
         if fov_confidence >= 1.0:
             self.approach_phase += CORRIDOR_APPROACH_PHASE_RATE * dt
@@ -576,6 +597,9 @@ class CameraCorridorPolicy(ChasePlopPolicy):
             self.approach_phase += CORRIDOR_APPROACH_PHASE_RATE * fov_confidence * 0.45 * dt
         self.approach_phase = float(np.clip(self.approach_phase, 0.0, 1.0))
 
+        # Plop mode is intentionally gated by more than phase. The drone should not
+        # commit unless it is near the platform, roughly velocity-matched, and still
+        # has enough FoV confidence to believe the target estimate is sane.
         if (
             not self.final_plop_enabled
             and self.approach_phase >= CORRIDOR_PLOP_PHASE
@@ -587,10 +611,15 @@ class CameraCorridorPolicy(ChasePlopPolicy):
 
         camera_down_angle = self._camera_down_angle(data)
         if self.final_plop_enabled:
+            # Final commit: aim slightly ahead of the platform so contact happens
+            # after the controller and physics latency, then descend aggressively.
             target_xy = platform_xy + platform_velocity * CORRIDOR_PLOP_LEAD_TIME
             target_velocity_xy = platform_velocity
             target_clearance = CORRIDOR_PLOP_CLEARANCE
         else:
+            # Normal corridor: slide down an invisible camera ray. As phase grows,
+            # clearance decreases, which analytically pulls the target closer behind
+            # the platform while keeping it near the camera's optical axis.
             target_clearance = lerp(
                 CORRIDOR_MAX_CLEARANCE,
                 CORRIDOR_MIN_CLEARANCE,
@@ -610,6 +639,8 @@ class CameraCorridorPolicy(ChasePlopPolicy):
                 data.cam_xmat[self.drone_camera_id].reshape(3, 3),
             )
 
+            # Feed forward the moving corridor point's velocity. Without this, the
+            # drone chases a moving point from behind instead of matching its motion.
             clearance_rate = -(
                 CORRIDOR_MAX_CLEARANCE - CORRIDOR_MIN_CLEARANCE
             ) * CORRIDOR_APPROACH_PHASE_RATE
@@ -637,6 +668,9 @@ class CameraCorridorPolicy(ChasePlopPolicy):
             descent_rate,
         )
 
+        # Motor cutoff is the actual "landing complete" event used by the metrics.
+        # It is separate from entering plop mode so the drone can still correct for
+        # a brief moment before becoming a passive body on the platform.
         if (
             self.final_plop_enabled
             and xy_error_norm < CORRIDOR_CUTOFF_XY_ERROR

@@ -20,3 +20,6 @@ There are many CLI arguments available, run `uv run simulator.py --help` for det
 ```
 uv run simulator.py --wind-strength 0 --policy mpc-fov --car-motion straight --car-speed 2
 ```
+
+## Tests
+You can run unit tests with `uv run tests`.
