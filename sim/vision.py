@@ -265,12 +265,12 @@ class ArucoVision:
             dtype=np.float64,
         )
         distortion = np.zeros(5)
-        rvecs, tvecs, _ = cv2.aruco.estimatePoseSingleMarkers(
-            marker_corners, ARUCO_MARKER_LENGTH, camera_matrix, distortion
+        rvec_cv, tvec_cv = self._estimate_marker_pose(
+            marker_corners[0],
+            ARUCO_MARKER_LENGTH,
+            camera_matrix,
+            distortion,
         )
-
-        tvec_cv = tvecs[0, 0]
-        rvec_cv = rvecs[0, 0]
         target_camera = np.array([tvec_cv[0], -tvec_cv[1], -tvec_cv[2]])
         target_world = camera_pos + camera_mat @ target_camera
         search_mode = roi_label if used_roi else "full"
@@ -281,6 +281,36 @@ class ArucoVision:
             f"@ {VISION_FPS:.0f}Hz {search_mode}"
         )
         return target_world, image_error, marker_angle, rvec_cv, marker_bbox, status
+
+    def _estimate_marker_pose(
+        self,
+        marker_corners: np.ndarray,
+        marker_length: float,
+        camera_matrix: np.ndarray,
+        distortion: np.ndarray,
+    ) -> tuple[np.ndarray, np.ndarray]:
+        half = marker_length * 0.5
+        object_points = np.array(
+            [
+                [-half, half, 0.0],
+                [half, half, 0.0],
+                [half, -half, 0.0],
+                [-half, -half, 0.0],
+            ],
+            dtype=np.float64,
+        )
+        image_points = marker_corners.reshape(4, 2).astype(np.float64)
+        flags = getattr(cv2, "SOLVEPNP_IPPE_SQUARE", cv2.SOLVEPNP_ITERATIVE)
+        ok, rvec, tvec = cv2.solvePnP(
+            object_points,
+            image_points,
+            camera_matrix,
+            distortion,
+            flags=flags,
+        )
+        if not ok:
+            raise RuntimeError("OpenCV failed to estimate ArUco marker pose.")
+        return rvec.reshape(3), tvec.reshape(3)
 
     def _detect_markers(
         self, gray: np.ndarray
