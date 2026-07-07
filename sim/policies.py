@@ -14,6 +14,23 @@ from .config import (
     CAPTURE_TRIGGER_CLEARANCE,
     CAPTURE_TRIGGER_XY_ERROR,
     CAPTURE_YAW_SOFT_LIMIT,
+    CORRIDOR_APPROACH_PHASE_RATE,
+    CORRIDOR_BAD_IMAGE_EDGE,
+    CORRIDOR_CUTOFF_CLEARANCE,
+    CORRIDOR_CUTOFF_REL_SPEED,
+    CORRIDOR_CUTOFF_XY_ERROR,
+    CORRIDOR_GOOD_IMAGE_EDGE,
+    CORRIDOR_MAX_BEHIND_DISTANCE,
+    CORRIDOR_MAX_CLEARANCE,
+    CORRIDOR_MIN_BEHIND_DISTANCE,
+    CORRIDOR_MIN_CLEARANCE,
+    CORRIDOR_PLOP_CLEARANCE,
+    CORRIDOR_PLOP_DESCENT_RATE,
+    CORRIDOR_PLOP_LEAD_TIME,
+    CORRIDOR_PLOP_PHASE,
+    CORRIDOR_PLOP_REL_SPEED,
+    CORRIDOR_PLOP_XY_ERROR,
+    CORRIDOR_RETREAT_PHASE_RATE,
     CUTOFF_CLEARANCE,
     CUTOFF_REL_SPEED,
     CUTOFF_XY_ERROR,
@@ -506,6 +523,161 @@ class MPCFoVPolicy(ChasePlopPolicy):
         return max(0.0, -slack), slack
 
 
+class CameraCorridorPolicy(ChasePlopPolicy):
+    """Geometric approach policy that links altitude to camera-centered standoff."""
+
+    def __init__(
+        self,
+        model: mujoco.MjModel,
+        controller: DroneController,
+        vision: ArucoVision,
+        drone_camera_id: int,
+        car_trajectory: CarTrajectory | None = None,
+    ) -> None:
+        super().__init__(model, controller, vision, drone_camera_id, car_trajectory)
+        self.approach_phase = 0.0
+        self.final_plop_enabled = False
+        self.status = "policy: camera-corridor"
+
+    def step(self, model: mujoco.MjModel, data: mujoco.MjData) -> None:
+        mujoco.mj_forward(model, data)
+
+        dt = float(model.opt.timestep)
+        platform_xy, platform_velocity, platform_top_height, platform_source = (
+            self.platform_state(model, data)
+        )
+        drone_pos = data.xpos[self.controller.body_id].copy()
+        drone_xy = drone_pos[:2]
+        clearance = float(drone_pos[2] - platform_top_height)
+
+        forward = normalized_or_default(platform_velocity, np.array([1.0, 0.0]))
+        bearing_to_platform = platform_xy - drone_xy
+        if float(np.linalg.norm(bearing_to_platform)) > 1e-4:
+            self.controller.set_target_yaw_angle(
+                math.atan2(float(bearing_to_platform[1]), float(bearing_to_platform[0])),
+                dt,
+            )
+        else:
+            self.controller.set_target_yaw_from_velocity(platform_velocity, dt)
+
+        relative_xy_velocity = (
+            data.qvel[self.controller.qvel_adr : self.controller.qvel_adr + 2]
+            - platform_velocity
+        )
+        relative_xy_speed = float(np.linalg.norm(relative_xy_velocity))
+        xy_error_norm = float(np.linalg.norm(platform_xy - drone_xy))
+
+        fov_confidence = self._fov_confidence()
+        if fov_confidence >= 1.0:
+            self.approach_phase += CORRIDOR_APPROACH_PHASE_RATE * dt
+        elif fov_confidence <= 0.0:
+            self.approach_phase -= CORRIDOR_RETREAT_PHASE_RATE * dt
+        else:
+            self.approach_phase += CORRIDOR_APPROACH_PHASE_RATE * fov_confidence * 0.45 * dt
+        self.approach_phase = float(np.clip(self.approach_phase, 0.0, 1.0))
+
+        if (
+            not self.final_plop_enabled
+            and self.approach_phase >= CORRIDOR_PLOP_PHASE
+            and xy_error_norm < CORRIDOR_PLOP_XY_ERROR
+            and relative_xy_speed < CORRIDOR_PLOP_REL_SPEED
+            and fov_confidence > 0.0
+        ):
+            self.final_plop_enabled = True
+
+        camera_down_angle = self._camera_down_angle(data)
+        if self.final_plop_enabled:
+            target_xy = platform_xy + platform_velocity * CORRIDOR_PLOP_LEAD_TIME
+            target_velocity_xy = platform_velocity
+            target_clearance = CORRIDOR_PLOP_CLEARANCE
+        else:
+            target_clearance = lerp(
+                CORRIDOR_MAX_CLEARANCE,
+                CORRIDOR_MIN_CLEARANCE,
+                self.approach_phase,
+            )
+            desired_standoff = target_clearance / max(0.12, math.tan(camera_down_angle))
+            desired_standoff = float(
+                np.clip(
+                    desired_standoff,
+                    CORRIDOR_MIN_BEHIND_DISTANCE,
+                    CORRIDOR_MAX_BEHIND_DISTANCE,
+                )
+            )
+            target_xy = platform_xy - forward * desired_standoff
+            target_xy += image_centering_offset_xy(
+                self.vision.image_error,
+                data.cam_xmat[self.drone_camera_id].reshape(3, 3),
+            )
+
+            clearance_rate = -(
+                CORRIDOR_MAX_CLEARANCE - CORRIDOR_MIN_CLEARANCE
+            ) * CORRIDOR_APPROACH_PHASE_RATE
+            standoff_rate = clearance_rate / max(0.12, math.tan(camera_down_angle))
+            target_velocity_xy = platform_velocity - forward * standoff_rate
+
+        self.controller.set_target_xy(target_xy, target_velocity_xy)
+
+        drone_rotation = data.xmat[self.controller.body_id].reshape(3, 3)
+        _, _, drone_yaw = rotation_to_euler_xyz(drone_rotation)
+        yaw_error = abs(wrap_angle(self.controller.target_yaw - drone_yaw))
+        should_capture = self.final_plop_enabled
+        self.controller.set_capture_mode(should_capture)
+
+        descent_rate = (
+            CORRIDOR_PLOP_DESCENT_RATE
+            if self.final_plop_enabled
+            else LANDING_DESCENT_RATE
+        )
+        if yaw_error > CAPTURE_YAW_SOFT_LIMIT:
+            descent_rate *= 0.25
+        self.controller.approach_target_height(
+            platform_top_height + target_clearance,
+            dt,
+            descent_rate,
+        )
+
+        if (
+            self.final_plop_enabled
+            and xy_error_norm < CORRIDOR_CUTOFF_XY_ERROR
+            and relative_xy_speed < CORRIDOR_CUTOFF_REL_SPEED
+            and clearance < CORRIDOR_CUTOFF_CLEARANCE
+        ):
+            self.controller.cut_motors()
+
+        self.controller.apply(model, data)
+        if self.controller.motors_enabled:
+            self.controller.status += (
+                f" yawerr={math.degrees(yaw_error):.0f}deg "
+                f"phase={self.approach_phase:.2f} fov={fov_confidence:.2f} loc={platform_source}"
+            )
+
+        self.car_controller.apply(model, data)
+        mode = "plop" if self.final_plop_enabled else "camera-corridor"
+        self.status = f"policy: {mode}"
+
+    def _fov_confidence(self) -> float:
+        image_edge = float(np.max(np.abs(self.vision.image_error)))
+        if self.vision.target_world is None:
+            return 0.35 if image_edge < 1e-3 else 0.0
+        if image_edge <= CORRIDOR_GOOD_IMAGE_EDGE:
+            return 1.0
+        if image_edge >= CORRIDOR_BAD_IMAGE_EDGE:
+            return 0.0
+
+        edge_range = CORRIDOR_BAD_IMAGE_EDGE - CORRIDOR_GOOD_IMAGE_EDGE
+        return float((CORRIDOR_BAD_IMAGE_EDGE - image_edge) / edge_range)
+
+    def _camera_down_angle(self, data: mujoco.MjData) -> float:
+        body_mat = data.xmat[self.controller.body_id].reshape(3, 3)
+        camera_mat = data.cam_xmat[self.drone_camera_id].reshape(3, 3)
+        camera_from_body = body_mat.T @ camera_mat
+        camera_forward_body = -camera_from_body[:, 2]
+        horizontal = float(np.linalg.norm(camera_forward_body[:2]))
+        down = max(0.0, -float(camera_forward_body[2]))
+        return max(math.radians(5.0), math.atan2(down, max(1e-6, horizontal)))
+
+
 def approach_target_xy(
     platform_xy: np.ndarray, platform_velocity: np.ndarray, clearance: float
 ) -> np.ndarray:
@@ -516,6 +688,17 @@ def approach_target_xy(
     behind_direction = -platform_velocity / speed
     blend = float(np.clip(clearance / APPROACH_BLEND_CLEARANCE, 0.0, 1.0))
     return platform_xy + behind_direction * APPROACH_BEHIND_DISTANCE * blend
+
+
+def normalized_or_default(vector: np.ndarray, default: np.ndarray) -> np.ndarray:
+    norm = float(np.linalg.norm(vector))
+    if norm < 1e-6:
+        return default.copy()
+    return vector / norm
+
+
+def lerp(start: float, end: float, t: float) -> float:
+    return start + (end - start) * t
 
 
 def image_centering_offset_xy(

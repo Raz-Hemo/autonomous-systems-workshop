@@ -18,7 +18,13 @@ from sim.config import (
     WIND_FORCE_N,
 )
 from sim.motor_mixing import DroneController
-from sim.policies import BehaviorPolicy, ChasePlopPolicy, MPCFoVPolicy, StableYawPolicy
+from sim.policies import (
+    BehaviorPolicy,
+    CameraCorridorPolicy,
+    ChasePlopPolicy,
+    MPCFoVPolicy,
+    StableYawPolicy,
+)
 from sim.rendering import (
     AutoTrackingCamera,
     add_camera_frustum,
@@ -53,7 +59,7 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument(
         "--policy",
-        choices=("chase-plop", "mpc-fov", "yaw-only"),
+        choices=("chase-plop", "mpc-fov", "camera-corridor", "yaw-only"),
         default="chase-plop",
         help="High-level behavior policy to run.",
     )
@@ -103,6 +109,8 @@ def make_policy(
         return StableYawPolicy(controller, yaw_rate)
     if args.policy == "mpc-fov":
         return MPCFoVPolicy(model, controller, vision, drone_camera_id, car_trajectory)
+    if args.policy == "camera-corridor":
+        return CameraCorridorPolicy(model, controller, vision, drone_camera_id, car_trajectory)
     if args.policy == "chase-plop":
         return ChasePlopPolicy(model, controller, vision, drone_camera_id, car_trajectory)
     raise ValueError(f"Unsupported policy: {args.policy}")
@@ -298,9 +306,12 @@ def main() -> None:
                 if landing_time is not None
                 else f"landing: flying {data.time:.2f}s"
             )
+            phase = getattr(policy, "approach_phase", None)
+            phase_metric = f"phase: {phase:.2f}\n" if phase is not None else ""
             status_panel = (
                 f"{controller.status}\n"
                 f"{vision.overlay_status()}\n"
+                f"{phase_metric}"
                 f"{landing_metric}\n"
                 f"power used: {battery_thrust_seconds:.1f} N*s"
             )
